@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: architect-arena-hybrid
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GITHUB_MODELS_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

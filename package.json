@@ -1,0 +1,29 @@
+{
+  "name": "architect-arena-hybrid",
+  "version": "1.0.0",
+  "description": "Multi-agent AI architecture debate system with Tri-Mode Execution Engine",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "install:browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "dotenv": "^16.4.0",
+    "zod": "^3.23.0",
+    "groq-sdk": "^0.8.0",
+    "openai": "^4.70.0",
+    "@google/generative-ai": "^0.21.0",
+    "playwright-extra": "^4.3.0",
+    "puppeteer-extra-plugin-stealth": "^2.11.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

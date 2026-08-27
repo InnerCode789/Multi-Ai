@@ -4,8 +4,6 @@ import { z } from 'zod';
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.string().default('development'),
-  DEFAULT_MODE: z.enum(['cloud', 'local', 'scraper', 'hybrid']).default('cloud'),
-  FAILOVER_ENABLED: z.coerce.boolean().default(true),
   
   GROQ_API_KEY: z.string().optional(),
   GROQ_MODEL: z.string().default('deepseek-r1-distill-llama-70b'),
@@ -18,55 +16,80 @@ const envSchema = z.object({
   GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
   
   OLLAMA_BASE_URL: z.string().default('http://localhost:11434'),
-  OLLAMA_MODEL_AGENT1: z.string().default('deepseek-r1:7b'),
-  OLLAMA_MODEL_AGENT2: z.string().default('llama3.2:3b'),
-  OLLAMA_MODEL_AGENT3: z.string().default('llama3.2:3b'),
+  OLLAMA_MODEL: z.string().default('llama3.2:3b'),
   
-  SCRAPER_TIMEOUT_MS: z.coerce.number().default(20000),
-  SCRAPER_USER_DATA_DIR: z.string().default('./.browser_session'),
+  AGENT_PLANNER_PROVIDER: z.string().default('gemini'),
+  AGENT_PLANNER_MODEL: z.string().default('gemini-2.5-flash'),
+  
+  AGENT_ENGINEER_PROVIDER: z.string().default('groq'),
+  AGENT_ENGINEER_MODEL: z.string().default('deepseek-r1-distill-llama-70b'),
+  
+  AGENT_REVIEWER_PROVIDER: z.string().default('github-models'),
+  AGENT_REVIEWER_MODEL: z.string().default('gpt-4o-mini'),
+  
+  AGENT_QA_PROVIDER: z.string().default('gemini'),
+  AGENT_QA_MODEL: z.string().default('gemini-2.5-flash'),
+  
+  MAX_ITERATIONS: z.coerce.number().default(10),
+  MAX_TOOL_CALLS_PER_TURN: z.coerce.number().default(15),
+  COMMAND_TIMEOUT_MS: z.coerce.number().default(30000),
+  WORKSPACE_BASE_DIR: z.string().default('./workspaces')
 });
 
-const parsedEnv = envSchema.safeParse(process.env);
+const parsed = envSchema.safeParse(process.env);
 
-if (!parsedEnv.success) {
-  console.error('❌ Invalid environment variables:', parsedEnv.error.format());
-  process.exit(1);
+if (!parsed.success) {
+  console.error('❌ Invalid environment variables:', parsed.error.format());
 }
 
-const env = parsedEnv.data;
+const env = parsed.data || envSchema.parse({});
 
-const config = Object.freeze({
+export const config = Object.freeze({
   server: {
     port: env.PORT,
-    nodeEnv: env.NODE_ENV,
+    nodeEnv: env.NODE_ENV
   },
-  mode: env.DEFAULT_MODE,
-  failover: env.FAILOVER_ENABLED,
   groq: {
     apiKey: env.GROQ_API_KEY,
-    model: env.GROQ_MODEL,
+    model: env.GROQ_MODEL
   },
   githubModels: {
     token: env.GITHUB_MODELS_TOKEN,
     model: env.GITHUB_MODELS_MODEL,
-    endpoint: env.GITHUB_MODELS_ENDPOINT,
+    endpoint: env.GITHUB_MODELS_ENDPOINT
   },
   gemini: {
     apiKey: env.GEMINI_API_KEY,
-    model: env.GEMINI_MODEL,
+    model: env.GEMINI_MODEL
   },
   ollama: {
     baseUrl: env.OLLAMA_BASE_URL,
-    models: {
-      agent1: env.OLLAMA_MODEL_AGENT1,
-      agent2: env.OLLAMA_MODEL_AGENT2,
-      agent3: env.OLLAMA_MODEL_AGENT3,
+    model: env.OLLAMA_MODEL
+  },
+  agents: {
+    planner: {
+      provider: env.AGENT_PLANNER_PROVIDER,
+      model: env.AGENT_PLANNER_MODEL
     },
+    engineer: {
+      provider: env.AGENT_ENGINEER_PROVIDER,
+      model: env.AGENT_ENGINEER_MODEL
+    },
+    reviewer: {
+      provider: env.AGENT_REVIEWER_PROVIDER,
+      model: env.AGENT_REVIEWER_MODEL
+    },
+    qa: {
+      provider: env.AGENT_QA_PROVIDER,
+      model: env.AGENT_QA_MODEL
+    }
   },
-  scraper: {
-    timeoutMs: env.SCRAPER_TIMEOUT_MS,
-    userDataDir: env.SCRAPER_USER_DATA_DIR,
-  },
+  system: {
+    maxIterations: env.MAX_ITERATIONS,
+    maxToolCallsPerTurn: env.MAX_TOOL_CALLS_PER_TURN,
+    commandTimeoutMs: env.COMMAND_TIMEOUT_MS,
+    workspaceBaseDir: env.WORKSPACE_BASE_DIR
+  }
 });
 
 export default config;

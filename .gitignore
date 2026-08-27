@@ -1,7 +1,9 @@
 node_modules/
 .env
-playwright-data/
+data/
+workspaces/
 .browser_session/
+playwright-data/
 user_data_dir/
 *.log
 .DS_Store

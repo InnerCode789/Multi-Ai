@@ -3,100 +3,172 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ArchitectArena Hybrid</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <title>Multi-AI | Autonomous Software Engineering System</title>
+    <!-- Highlight.js for code blocks -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header class="header">
-        <div class="logo">
-            <h1>🏛️ ArchitectArena</h1>
-            <span class="subtitle">AI Design Debate System</span>
+    <header class="app-header">
+        <div class="logo-group">
+            <div class="logo-icon"><i class="fa-solid fa-microchip"></i></div>
+            <div>
+                <h1>Multi-AI Engine</h1>
+                <p class="tagline">Autonomous Multi-Model Software Engineering Team</p>
+            </div>
         </div>
-        <div class="connection-status">
-            <span id="status-indicator" class="indicator disconnected"></span>
-            <span id="status-text">Disconnected</span>
+
+        <div class="header-status">
+            <div class="agent-badges">
+                <span class="badge badge-planner"><i class="fa-solid fa-brain"></i> Planner: <strong id="badge-planner">Gemini</strong></span>
+                <span class="badge badge-engineer"><i class="fa-solid fa-code"></i> Engineer: <strong id="badge-engineer">DeepSeek-R1</strong></span>
+                <span class="badge badge-reviewer"><i class="fa-solid fa-shield-halved"></i> Reviewer: <strong id="badge-reviewer">GPT-4o-mini</strong></span>
+                <span class="badge badge-qa"><i class="fa-solid fa-vial-circle-check"></i> QA: <strong id="badge-qa">Gemini</strong></span>
+            </div>
+            <div id="system-status-indicator" class="status-pill status-ready">
+                <span class="pulse-dot"></span> <span id="status-text">System Ready</span>
+            </div>
         </div>
     </header>
 
-    <main class="container">
-        <section class="input-panel">
-            <h2>System Design Challenge</h2>
-            <textarea id="code-input" placeholder="Describe the system requirements or paste existing architecture code..." spellcheck="false"></textarea>
-            
-            <div class="controls">
-                <div class="control-group">
-                    <label for="language-select">Language/Context:</label>
-                    <select id="language-select">
-                        <option value="javascript">Node.js / JS</option>
-                        <option value="python">Python</option>
-                        <option value="java">Java</option>
-                        <option value="go">Go</option>
-                        <option value="architecture" selected>System Architecture</option>
-                    </select>
-                </div>
+    <main class="dashboard-grid">
+        <!-- TOP: Goal Input & Stage Progress -->
+        <section class="goal-section card">
+            <div class="section-title">
+                <h2><i class="fa-solid fa-bullseye"></i> Autonomous Goal Directive</h2>
+                <span class="info-text">Multiple models analyze, plan, implement, review, debate, and verify real code.</span>
+            </div>
+
+            <div class="input-container">
+                <textarea id="goal-input" placeholder="e.g. Build a modern ChatGPT-style web frontend with a sidebar, conversation list, message streaming, markdown rendering, responsive mobile layout and dark mode."></textarea>
                 
-                <div class="control-group">
-                    <label for="mode-select">Execution Mode:</label>
-                    <select id="mode-select">
-                        <option value="cloud">⚡ Free Cloud APIs (Fast)</option>
-                        <option value="local">💻 Local Ollama</option>
-                        <option value="scraper">🕷️ Stealth Web Scraper (DeepSeek/ChatGPT)</option>
-                        <option value="hybrid">🔀 Auto-Fallback Hybrid</option>
-                    </select>
-                </div>
+                <div class="goal-actions">
+                    <div class="advanced-settings">
+                        <label><i class="fa-solid fa-arrows-rotate"></i> Max Iterations: 
+                            <select id="max-iterations">
+                                <option value="5">5 Iterations</option>
+                                <option value="10" selected>10 Iterations</option>
+                                <option value="15">15 Iterations</option>
+                            </select>
+                        </label>
+                    </div>
 
-                <button id="start-btn" class="primary-btn">
-                    <span class="btn-text">Start Debate</span>
-                    <span class="btn-icon">▶</span>
-                </button>
+                    <button id="start-goal-btn" class="btn-primary">
+                        <i class="fa-solid fa-play"></i> LAUNCH AUTONOMOUS TEAM
+                    </button>
+                    <button id="stop-goal-btn" class="btn-danger" style="display: none;">
+                        <i class="fa-solid fa-stop"></i> ABORT RUN
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stage Progress Tracker -->
+            <div class="stage-tracker" id="stage-tracker">
+                <div class="stage-step" id="step-planning">
+                    <div class="step-icon"><i class="fa-solid fa-sitemap"></i></div>
+                    <div class="step-label">1. Planning</div>
+                </div>
+                <div class="stage-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+                <div class="stage-step" id="step-engineering">
+                    <div class="step-icon"><i class="fa-solid fa-laptop-code"></i></div>
+                    <div class="step-label">2. Implementation</div>
+                </div>
+                <div class="stage-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+                <div class="stage-step" id="step-reviewing">
+                    <div class="step-icon"><i class="fa-solid fa-glasses"></i></div>
+                    <div class="step-label">3. Critical Review</div>
+                </div>
+                <div class="stage-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+                <div class="stage-step" id="step-debating">
+                    <div class="step-icon"><i class="fa-solid fa-comments"></i></div>
+                    <div class="step-label">4. Debate & Revision</div>
+                </div>
+                <div class="stage-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+                <div class="stage-step" id="step-verifying">
+                    <div class="step-icon"><i class="fa-solid fa-clipboard-check"></i></div>
+                    <div class="step-label">5. QA & Verification</div>
+                </div>
             </div>
         </section>
 
-        <section class="arena-panel">
-            <div class="debate-columns">
-                <div class="agent-card">
-                    <div class="agent-header">
-                        <h3>⚡ Performance Purist</h3>
+        <!-- MIDDLE: 3 Column Engineering Dashboard -->
+        <div class="three-col-layout">
+            <!-- Left Column: Tasks & Criteria -->
+            <div class="col-left">
+                <!-- Task Queue -->
+                <div class="card tasks-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-list-check"></i> Task Decomposition (<span id="task-count">0</span>)</h3>
                     </div>
-                    <div id="agent1-output" class="agent-output"></div>
-                    <div id="agent1-typing" class="typing-indicator hidden">
-                        <span></span><span></span><span></span>
+                    <div class="task-list" id="task-list">
+                        <div class="empty-state">No tasks generated yet.</div>
                     </div>
                 </div>
 
-                <div class="agent-card">
-                    <div class="agent-header">
-                        <h3>🛡️ Security Auditor</h3>
+                <!-- Acceptance Criteria Checklist -->
+                <div class="card criteria-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-certificate"></i> Acceptance Criteria (<span id="criteria-progress">0/0</span>)</h3>
                     </div>
-                    <div id="agent2-output" class="agent-output"></div>
-                    <div id="agent2-typing" class="typing-indicator hidden">
-                        <span></span><span></span><span></span>
+                    <div class="criteria-list" id="criteria-list">
+                        <div class="empty-state">Acceptance criteria will appear once planned.</div>
                     </div>
                 </div>
             </div>
 
-            <div class="verdict-section">
-                <div class="agent-card final-verdict-card">
-                    <div class="agent-header">
-                        <h3>👨⚖️ Chief Architect — Final Verdict</h3>
-                        <button id="copy-btn" class="copy-btn" style="display:none;">📋 Copy Final Code</button>
+            <!-- Middle Column: Live Engineering Event Stream & Debate Feed -->
+            <div class="col-center">
+                <div class="card feed-card">
+                    <div class="card-header feed-header">
+                        <h3><i class="fa-solid fa-tower-broadcast"></i> Live Multi-Agent Engineering Feed</h3>
+                        <div class="feed-filters">
+                            <button class="filter-btn active" data-filter="all">All</button>
+                            <button class="filter-btn" data-filter="debate">Debate</button>
+                            <button class="filter-btn" data-filter="tools">Tools</button>
+                            <button class="filter-btn" data-filter="qa">QA</button>
+                        </div>
                     </div>
-                    <div id="agent3-output" class="agent-output"></div>
-                    <div id="agent3-typing" class="typing-indicator hidden">
-                        <span></span><span></span><span></span>
+                    <div class="feed-container" id="feed-container">
+                        <div class="feed-welcome">
+                            <i class="fa-solid fa-terminal"></i>
+                            <p>System idle. Enter your goal above to initiate the autonomous development loop.</p>
+                        </div>
                     </div>
                 </div>
             </div>
-        </section>
+
+            <!-- Right Column: Code & Workspace Explorer -->
+            <div class="col-right">
+                <div class="card workspace-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-folder-tree"></i> Generated Workspace</h3>
+                        <span id="workspace-path-label" class="workspace-label">./workspaces</span>
+                    </div>
+                    <div class="files-container" id="files-container">
+                        <div class="empty-state">No files modified yet.</div>
+                    </div>
+                </div>
+
+                <!-- Architectural Decisions -->
+                <div class="card decisions-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-gavel"></i> Architectural Decisions</h3>
+                    </div>
+                    <div class="decisions-list" id="decisions-list">
+                        <div class="empty-state">No decisions logged yet.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
-    <footer class="status-bar">
-        <span id="footer-status">Ready. Select mode and enter prompt.</span>
-    </footer>
-
+    <!-- Markdown & Syntax parser -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <!-- Application Logic -->
     <script src="app.js"></script>
 </body>
 </html>

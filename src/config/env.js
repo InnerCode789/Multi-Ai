@@ -4,7 +4,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.string().default('development'),
-  DEFAULT_MODE: z.string().default('cloud'),
+  DEFAULT_MODE: z.enum(['cloud', 'local', 'scraper', 'hybrid']).default('cloud'),
   FAILOVER_ENABLED: z.coerce.boolean().default(true),
   
   GROQ_API_KEY: z.string().optional(),
@@ -23,7 +23,7 @@ const envSchema = z.object({
   OLLAMA_MODEL_AGENT3: z.string().default('llama3.2:3b'),
   
   SCRAPER_TIMEOUT_MS: z.coerce.number().default(20000),
-  SCRAPER_USER_DATA_DIR: z.string().default('./playwright-data'),
+  SCRAPER_USER_DATA_DIR: z.string().default('./.browser_session'),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

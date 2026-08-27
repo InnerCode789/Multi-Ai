@@ -3,121 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ArchitectArena Hybrid | AI Debate Engine</title>
-    <!-- Syntax Highlighting Theme -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/monokai-sublime.min.css">
-    <!-- Custom CSS -->
+    <title>ArchitectArena Hybrid</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
+    <header class="header">
         <div class="logo">
-            <h1>🥊 ArchitectArena</h1>
-            <p class="subtitle">Tri-Mode AI Architecture Debate Engine</p>
+            <h1>🏛️ ArchitectArena</h1>
+            <span class="subtitle">AI Design Debate System</span>
         </div>
-        <div id="connection-status" class="status-indicator">
-            <span class="dot"></span> <span class="status-text">Ready</span>
+        <div class="connection-status">
+            <span id="status-indicator" class="indicator disconnected"></span>
+            <span id="status-text">Disconnected</span>
         </div>
     </header>
 
-    <main>
+    <main class="container">
         <section class="input-panel">
-            <div class="input-header">
-                <h2>Debate Topic / Code snippet</h2>
-                <div class="language-select">
-                    <select id="language-dropdown">
-                        <option value="javascript">JavaScript</option>
-                        <option value="python">Python</option>
-                        <option value="typescript">TypeScript</option>
-                        <option value="go">Go</option>
-                        <option value="rust">Rust</option>
-                        <option value="java">Java</option>
-                        <option value="cpp">C++</option>
-                        <option value="csharp">C#</option>
-                        <option value="ruby">Ruby</option>
-                        <option value="php">PHP</option>
-                    </select>
-                </div>
-            </div>
-            
-            <textarea id="code-input" placeholder="Paste your architecture design, code snippet, or technical dilemma here..."></textarea>
+            <h2>System Design Challenge</h2>
+            <textarea id="code-input" placeholder="Describe the system requirements or paste existing architecture code..." spellcheck="false"></textarea>
             
             <div class="controls">
-                <div class="mode-selector">
-                    <label class="mode-chip">
-                        <input type="radio" name="mode" value="cloud" checked>
-                        <span class="chip-text">⚡ Cloud APIs</span>
-                    </label>
-                    <label class="mode-chip">
-                        <input type="radio" name="mode" value="local">
-                        <span class="chip-text">💻 Local Ollama</span>
-                    </label>
-                    <label class="mode-chip">
-                        <input type="radio" name="mode" value="scraper">
-                        <span class="chip-text">🕷️ Web Scraper</span>
-                    </label>
-                    <label class="mode-chip">
-                        <input type="radio" name="mode" value="auto">
-                        <span class="chip-text">🔄 Auto</span>
-                    </label>
+                <div class="control-group">
+                    <label for="language-select">Language/Context:</label>
+                    <select id="language-select">
+                        <option value="javascript">Node.js / JS</option>
+                        <option value="python">Python</option>
+                        <option value="java">Java</option>
+                        <option value="go">Go</option>
+                        <option value="architecture" selected>System Architecture</option>
+                    </select>
                 </div>
                 
-                <button id="start-btn" class="neon-btn">🥊 START DEBATE</button>
+                <div class="control-group">
+                    <label for="mode-select">Execution Mode:</label>
+                    <select id="mode-select">
+                        <option value="cloud">⚡ Free Cloud APIs (Fast)</option>
+                        <option value="local">💻 Local Ollama</option>
+                        <option value="scraper">🕷️ Stealth Web Scraper (DeepSeek/ChatGPT)</option>
+                        <option value="hybrid">🔀 Auto-Fallback Hybrid</option>
+                    </select>
+                </div>
+
+                <button id="start-btn" class="primary-btn">
+                    <span class="btn-text">Start Debate</span>
+                    <span class="btn-icon">▶</span>
+                </button>
             </div>
         </section>
 
         <section class="arena-panel">
-            <div class="agent-column agent-purist" id="agent1-col">
-                <div class="agent-header">
-                    <span class="icon">⚡</span>
-                    <h3>Performance Purist</h3>
+            <div class="debate-columns">
+                <div class="agent-card">
+                    <div class="agent-header">
+                        <h3>⚡ Performance Purist</h3>
+                    </div>
+                    <div id="agent1-output" class="agent-output"></div>
+                    <div id="agent1-typing" class="typing-indicator hidden">
+                        <span></span><span></span><span></span>
+                    </div>
                 </div>
-                <div class="output-container" id="agent1-output">
-                    <div class="placeholder-text">Waiting for debate to start...</div>
-                </div>
-                <div class="typing-indicator" id="agent1-typing">
-                    <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+
+                <div class="agent-card">
+                    <div class="agent-header">
+                        <h3>🛡️ Security Auditor</h3>
+                    </div>
+                    <div id="agent2-output" class="agent-output"></div>
+                    <div id="agent2-typing" class="typing-indicator hidden">
+                        <span></span><span></span><span></span>
+                    </div>
                 </div>
             </div>
 
-            <div class="agent-column agent-security" id="agent2-col">
-                <div class="agent-header">
-                    <span class="icon">🛡️</span>
-                    <h3>Security Auditor</h3>
-                </div>
-                <div class="output-container" id="agent2-output">
-                    <div class="placeholder-text">Waiting for debate to start...</div>
-                </div>
-                <div class="typing-indicator" id="agent2-typing">
-                    <div class="dot"></div><div class="dot"></div><div class="dot"></div>
-                </div>
-            </div>
-
-            <div class="agent-column agent-architect" id="agent3-col">
-                <div class="agent-header">
-                    <span class="icon">👨‍⚖️</span>
-                    <h3>Chief Architect</h3>
-                </div>
-                <div class="output-container" id="agent3-output">
-                    <div class="placeholder-text">Waiting for debate to start...</div>
-                </div>
-                <div class="typing-indicator" id="agent3-typing">
-                    <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+            <div class="verdict-section">
+                <div class="agent-card final-verdict-card">
+                    <div class="agent-header">
+                        <h3>👨⚖️ Chief Architect — Final Verdict</h3>
+                        <button id="copy-btn" class="copy-btn" style="display:none;">📋 Copy Final Code</button>
+                    </div>
+                    <div id="agent3-output" class="agent-output"></div>
+                    <div id="agent3-typing" class="typing-indicator hidden">
+                        <span></span><span></span><span></span>
+                    </div>
                 </div>
             </div>
         </section>
     </main>
 
     <footer class="status-bar">
-        <div class="status-item mode-info">Mode: <span id="active-mode">⚡ Cloud APIs</span></div>
-        <div class="status-item round-info">Round: <span id="round-progress">0 / 3</span></div>
-        <div class="status-item failover-alert" id="failover-notice" style="display: none;"></div>
+        <span id="footer-status">Ready. Select mode and enter prompt.</span>
     </footer>
 
-    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
-    <!-- App Logic -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

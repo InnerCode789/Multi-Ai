@@ -8,101 +8,117 @@ import * as refAgent from '../prompts/refereeAgent.js';
 import config from '../config/env.js';
 
 const requestSchema = z.object({
-  codeSnippet: z.string().min(1).max(10000),
-  language: z.string().default('javascript'),
-  mode: z.enum(['cloud', 'local', 'scraper', 'auto']).default(config?.defaultMode || 'auto'),
-  rounds: z.number().int().min(1).max(5).default(3)
+  codeSnippet: z.string().min(1, "Code snippet is required"),
+  language: z.string().default("javascript"),
+  mode: z.enum(['cloud', 'local', 'scraper', 'hybrid']).default('hybrid'),
+  rounds: z.number().int().min(1).max(3).default(3)
 });
 
-export async function handleArenaStream(req, res) {
+export const runDebate = async (req, res) => {
+  // Ensure the exact headers are set
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  setupSSE(res);
+
   let heartbeatInterval;
-  
+  let clientDisconnected = false;
+
+  req.on('close', () => {
+    clientDisconnected = true;
+    if (heartbeatInterval) {
+      stopHeartbeat(heartbeatInterval);
+    }
+    logger.info("Client disconnected during debate");
+    res.end();
+  });
+
+  const startTime = Date.now();
+  let totalWords = 0;
+  const providersUsed = new Set();
+
+  const countWords = (str) => {
+    if (!str) return 0;
+    return str.split(/\s+/).filter(w => w.length > 0).length;
+  };
+
   try {
-    const parseResult = requestSchema.safeParse(req.body);
-    if (!parseResult.success) {
-      return res.status(400).json({ error: 'Invalid request', details: parseResult.error.errors });
+    // We assume the data is coming in via query params or body, preferring body for large code
+    const inputData = req.body || req.query;
+    const validatedData = requestSchema.parse(inputData);
+    const { codeSnippet, language, mode, rounds } = validatedData;
+
+    sendSSE(res, 'init', { mode, language, rounds });
+
+    // Start sending ping/heartbeat events
+    heartbeatInterval = startHeartbeat(res);
+
+    const processStream = async (stream, eventName) => {
+      let fullResponse = "";
+      for await (const chunk of stream) {
+        if (clientDisconnected) break;
+
+        if (chunk.failover || chunk.event === 'failover_notice') {
+          sendSSE(res, 'failover_notice', { message: chunk.message || 'Provider failover triggered' });
+          continue;
+        }
+
+        if (chunk.provider) {
+          providersUsed.add(chunk.provider);
+        }
+
+        if (chunk.chunk) {
+          fullResponse += chunk.chunk;
+          totalWords += countWords(chunk.chunk);
+          sendSSE(res, eventName, { content: chunk.chunk });
+        }
+      }
+      return fullResponse;
+    };
+
+    // Round 1: Performance Agent
+    const perfPrompt = perfAgent.buildPrompt(codeSnippet, language);
+    const perfStream = dispatcher.streamWithFailover(mode, perfAgent.SYSTEM_PROMPT, perfPrompt, {});
+    const perfResponse = await processStream(perfStream, 'round1_perf');
+
+    if (clientDisconnected) return;
+
+    // Round 2: Security Agent
+    let secResponse = "";
+    if (rounds >= 2) {
+      const secPrompt = secAgent.buildPrompt(codeSnippet, language, perfResponse);
+      const secStream = dispatcher.streamWithFailover(mode, secAgent.SYSTEM_PROMPT, secPrompt, {});
+      secResponse = await processStream(secStream, 'round2_sec');
     }
 
-    const { codeSnippet, language, mode, rounds } = parseResult.data;
+    if (clientDisconnected) return;
 
-    setupSSE(res);
-    startHeartbeat(res);
+    // Final Round: Referee (Chief Architect)
+    if (rounds >= 3) {
+      const refPrompt = refAgent.buildPrompt(codeSnippet, language, perfResponse, secResponse);
+      const refStream = dispatcher.streamWithFailover(mode, refAgent.SYSTEM_PROMPT, refPrompt, {});
+      await processStream(refStream, 'final_verdict');
+    }
 
-    sendSSE(res, 'debate_start', { mode, language, rounds });
+    if (clientDisconnected) return;
 
-    const responses = {};
-    let activeMode = mode;
-    const abortController = new AbortController();
-
-    req.on('close', () => {
-      logger.info('Client closed connection, aborting provider streams.');
-      abortController.abort();
+    const totalTimeMs = Date.now() - startTime;
+    sendSSE(res, 'done', {
+      totalTimeMs,
+      totalWords,
+      providersUsed: Array.from(providersUsed),
+      mode
     });
 
-    // Round 1 - Performance Purist
-    sendSSE(res, 'round_start', { round: 1, agent: 'Performance Purist', role: 'performance' });
-    const perfPrompt = perfAgent.buildPrompt(codeSnippet, language, null);
-    const perfFullPrompt = perfAgent.SYSTEM_PROMPT + '\n\n' + perfPrompt;
-    let perfResponseText = '';
-
-    for await (const chunk of dispatcher.streamWithFailover(activeMode, 'performance', perfFullPrompt, { signal: abortController.signal })) {
-      sendSSE(res, 'token', { round: 1, content: chunk.chunk });
-      perfResponseText += chunk.chunk;
-      if (chunk.failover) {
-        sendSSE(res, 'failover_notice', { from: chunk.failover.from, to: chunk.failover.to });
-        activeMode = chunk.failover.to;
-      }
-    }
-    responses.performance = perfResponseText;
-    sendSSE(res, 'round_end', { round: 1, agent: 'Performance Purist' });
-
-    // Round 2 - Security Auditor
-    sendSSE(res, 'round_start', { round: 2, agent: 'Security Auditor', role: 'security' });
-    const secPrompt = secAgent.buildPrompt(codeSnippet, language, responses.performance);
-    const secFullPrompt = secAgent.SYSTEM_PROMPT + '\n\n' + secPrompt;
-    let secResponseText = '';
-
-    for await (const chunk of dispatcher.streamWithFailover(activeMode, 'security', secFullPrompt, { signal: abortController.signal })) {
-      sendSSE(res, 'token', { round: 2, content: chunk.chunk });
-      secResponseText += chunk.chunk;
-      if (chunk.failover) {
-        sendSSE(res, 'failover_notice', { from: chunk.failover.from, to: chunk.failover.to });
-        activeMode = chunk.failover.to;
-      }
-    }
-    responses.security = secResponseText;
-    sendSSE(res, 'round_end', { round: 2, agent: 'Security Auditor' });
-
-    // Final Round - Chief Architect
-    sendSSE(res, 'round_start', { round: 3, agent: 'Chief Architect', role: 'referee' });
-    const refPrompt = refAgent.buildPrompt(codeSnippet, language, responses.performance, responses.security);
-    const refFullPrompt = refAgent.SYSTEM_PROMPT + '\n\n' + refPrompt;
-    let refResponseText = '';
-
-    for await (const chunk of dispatcher.streamWithFailover(activeMode, 'referee', refFullPrompt, { signal: abortController.signal })) {
-      sendSSE(res, 'token', { round: 3, content: chunk.chunk });
-      refResponseText += chunk.chunk;
-      if (chunk.failover) {
-        sendSSE(res, 'failover_notice', { from: chunk.failover.from, to: chunk.failover.to });
-        activeMode = chunk.failover.to;
-      }
-    }
-    responses.referee = refResponseText;
-    sendSSE(res, 'round_end', { round: 3, agent: 'Chief Architect' });
-
-    sendSSE(res, 'debate_complete', { summary: 'Debate successfully concluded.', totalRounds: 3 });
-
   } catch (error) {
-    logger.error('Arena controller error:', error);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: error.message });
-    } else {
+    logger.error(`Error in runDebate: ${error.message}`);
+    if (!clientDisconnected) {
       sendSSE(res, 'error', { message: error.message });
     }
   } finally {
-    stopHeartbeat(res);
-    if (!res.writableEnded) {
+    if (heartbeatInterval) stopHeartbeat(heartbeatInterval);
+    if (!clientDisconnected) {
       res.end();
     }
   }
-}
+};

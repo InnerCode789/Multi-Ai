@@ -4,128 +4,208 @@ import { getScraperProvider } from './webScraperProvider.js';
 import logger from '../utils/logger.js';
 import config from '../config/env.js';
 
-export class ProviderDispatcher {
+class ProviderManager {
   constructor() {
-    this.circuitBreaker = {
-      scraper: {
-        failures: 0,
-        lastFailure: null,
-        isOpen: false
-      }
-    };
+    this.consecutiveScraperFailures = 0;
+    this.scraperCircuitOpen = false;
+    this.MAX_FAILURES = 3;
+    this.CIRCUIT_COOLDOWN_MS = 60000;
   }
 
-  getProvider(mode, role) {
-    switch (mode) {
-      case 'cloud':
-        return getCloudProvider(role);
-      case 'local':
-        return getOllamaProvider(role);
-      case 'scraper':
-        if (this.circuitBreaker.scraper.isOpen) {
-          const now = Date.now();
-          // Reset circuit after 5 minutes
-          if (now - this.circuitBreaker.scraper.lastFailure > 5 * 60 * 1000) {
-            this.circuitBreaker.scraper.isOpen = false;
-            this.circuitBreaker.scraper.failures = 0;
-            return getScraperProvider(role);
-          } else {
-            throw new Error('Circuit breaker is open for scraper mode.');
+  recordScraperFailure() {
+    this.consecutiveScraperFailures++;
+    if (this.consecutiveScraperFailures >= this.MAX_FAILURES && !this.scraperCircuitOpen) {
+      this.scraperCircuitOpen = true;
+      logger.warn('Scraper circuit breaker OPEN.');
+      setTimeout(() => {
+        this.scraperCircuitOpen = false;
+        this.consecutiveScraperFailures = 0;
+        logger.info('Scraper circuit breaker RESET.');
+      }, this.CIRCUIT_COOLDOWN_MS);
+    }
+  }
+
+  async dispatchPrompt({ prompt, agentType, requestedMode = config.mode }) {
+    const options = { agentType };
+
+    if (requestedMode === 'hybrid') {
+      return this.executeHybrid(prompt, agentType, options);
+    }
+
+    return this.executeWithFailover(prompt, agentType, requestedMode, options);
+  }
+
+  async executeHybrid(prompt, agentType, options) {
+    // 1. Try Scraper
+    if (!this.scraperCircuitOpen) {
+      try {
+        const scraper = getScraperProvider(agentType);
+        const result = await scraper.generate(prompt, options);
+        this.consecutiveScraperFailures = 0;
+        return result;
+      } catch (e) {
+        this.recordScraperFailure();
+        logger.warn(`[WARN] Execution failed on scraper. Falling back to local in hybrid mode...`);
+      }
+    }
+
+    // 2. Try Local
+    try {
+      const local = getOllamaProvider(agentType);
+      return await local.generate(prompt, options);
+    } catch (e) {
+      logger.warn(`[WARN] Execution failed on hybrid. Initiating fallback to Cloud API...`);
+    }
+
+    // 3. Fallback to Cloud
+    const cloud = getCloudProvider(agentType);
+    return await cloud.generate(prompt, options);
+  }
+
+  async executeWithFailover(prompt, agentType, mode, options) {
+    if (mode === 'cloud') {
+      const provider = getCloudProvider(agentType);
+      return await provider.generate(prompt, options);
+    }
+
+    let primaryProvider;
+    if (mode === 'local') {
+      primaryProvider = getOllamaProvider(agentType);
+    } else if (mode === 'scraper') {
+      if (this.scraperCircuitOpen) {
+        logger.warn(`[WARN] Execution failed on ${mode}. Initiating fallback to Cloud API...`);
+        const cloud = getCloudProvider(agentType);
+        return await cloud.generate(prompt, options);
+      }
+      primaryProvider = getScraperProvider(agentType);
+    } else {
+      primaryProvider = getCloudProvider(agentType);
+    }
+
+    try {
+      const result = await primaryProvider.generate(prompt, options);
+      if (mode === 'scraper') {
+        this.consecutiveScraperFailures = 0;
+      }
+      return result;
+    } catch (e) {
+      if (mode === 'scraper') {
+        this.recordScraperFailure();
+      }
+      
+      if (config.failover) {
+        logger.warn(`[WARN] Execution failed on ${mode}. Initiating fallback to Cloud API...`);
+        const cloud = getCloudProvider(agentType);
+        return await cloud.generate(prompt, options);
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  async *streamWithFailover({ prompt, agentType, requestedMode = config.mode }) {
+    const options = { agentType };
+
+    if (requestedMode === 'hybrid') {
+      let yielded = false;
+      
+      if (!this.scraperCircuitOpen) {
+        try {
+          const scraper = getScraperProvider(agentType);
+          const stream = await scraper.stream(prompt, options);
+          for await (const chunk of stream) {
+            yielded = true;
+            yield chunk;
           }
+          this.consecutiveScraperFailures = 0;
+          return;
+        } catch (e) {
+          this.recordScraperFailure();
+          if (yielded) throw e;
+          logger.warn(`[WARN] Execution failed on scraper. Falling back to local in hybrid mode...`);
         }
-        return getScraperProvider(role);
-      default:
-        throw new Error(`Unknown provider mode: ${mode}`);
-    }
-  }
-
-  async executeWithFailover(mode, role, prompt, options = {}) {
-    let currentMode = mode;
-    let provider;
-    
-    try {
-      provider = this.getProvider(currentMode, role);
-      const result = await provider.generate(prompt, options);
-      
-      // On success, reset scraper circuit breaker if it was scraper mode
-      if (currentMode === 'scraper') {
-        this.circuitBreaker.scraper.failures = 0;
       }
-      
-      return { provider: provider.getName(), result, failedOver: false };
-    } catch (error) {
-      if (currentMode === 'scraper' && config.failover) {
-        logger.failover(`Scraper failed: ${error.message}. Attempting failover to cloud.`);
-        
-        this.circuitBreaker.scraper.failures++;
-        this.circuitBreaker.scraper.lastFailure = Date.now();
-        
-        if (this.circuitBreaker.scraper.failures >= 3) {
-          this.circuitBreaker.scraper.isOpen = true;
-          logger.warn('Circuit breaker opened for scraper mode due to 3 consecutive failures.');
-        }
 
-        currentMode = 'cloud';
-        provider = this.getProvider(currentMode, role);
-        const result = await provider.generate(prompt, options);
-        return { provider: provider.getName(), result, failedOver: true };
-      }
-      
-      throw error;
-    }
-  }
-
-  async *streamWithFailover(mode, role, prompt, options = {}) {
-    let currentMode = mode;
-    let provider;
-    
-    try {
-      provider = this.getProvider(currentMode, role);
-      const stream = provider.stream(prompt, options);
-      
-      for await (const chunk of stream) {
-        yield { ...chunk, provider: provider.getName(), failedOver: false };
-      }
-      
-      if (currentMode === 'scraper') {
-        this.circuitBreaker.scraper.failures = 0;
-      }
-    } catch (error) {
-      if (currentMode === 'scraper' && config.failover) {
-        logger.failover(`Scraper failed during stream: ${error.message}. Attempting failover to cloud.`);
-        
-        this.circuitBreaker.scraper.failures++;
-        this.circuitBreaker.scraper.lastFailure = Date.now();
-        
-        if (this.circuitBreaker.scraper.failures >= 3) {
-          this.circuitBreaker.scraper.isOpen = true;
-          logger.warn('Circuit breaker opened for scraper mode due to 3 consecutive failures.');
-        }
-
-        currentMode = 'cloud';
-        provider = this.getProvider(currentMode, role);
-        
-        yield { event: 'failover_notice', message: 'Switched to cloud mode', failedOver: true };
-        
-        const stream = provider.stream(prompt, options);
+      try {
+        const local = getOllamaProvider(agentType);
+        const stream = await local.stream(prompt, options);
         for await (const chunk of stream) {
-          yield { ...chunk, provider: provider.getName(), failedOver: true };
+          yielded = true;
+          yield chunk;
+        }
+        return;
+      } catch (e) {
+        if (yielded) throw e;
+        logger.warn(`[WARN] Execution failed on hybrid. Initiating fallback to Cloud API...`);
+      }
+
+      const cloud = getCloudProvider(agentType);
+      const stream = await cloud.stream(prompt, options);
+      for await (const chunk of stream) {
+        yield chunk;
+      }
+      return;
+    }
+
+    if (requestedMode === 'cloud') {
+      const provider = getCloudProvider(agentType);
+      const stream = await provider.stream(prompt, options);
+      for await (const chunk of stream) {
+        yield chunk;
+      }
+      return;
+    }
+
+    let primaryProvider;
+    if (requestedMode === 'local') {
+      primaryProvider = getOllamaProvider(agentType);
+    } else if (requestedMode === 'scraper') {
+      if (this.scraperCircuitOpen) {
+        logger.warn(`[WARN] Execution failed on ${requestedMode}. Initiating fallback to Cloud API...`);
+        const cloud = getCloudProvider(agentType);
+        const stream = await cloud.stream(prompt, options);
+        for await (const chunk of stream) {
+          yield chunk;
         }
         return;
       }
-      
-      throw error;
+      primaryProvider = getScraperProvider(agentType);
+    } else {
+      primaryProvider = getCloudProvider(agentType);
     }
-  }
 
-  getStatus() {
-    return {
-      mode: config.mode,
-      circuitBreaker: this.circuitBreaker,
-      availableProviders: ['cloud', 'local', 'scraper']
-    };
+    let yielded = false;
+    try {
+      const stream = await primaryProvider.stream(prompt, options);
+      for await (const chunk of stream) {
+        yielded = true;
+        yield chunk;
+      }
+      if (requestedMode === 'scraper') {
+        this.consecutiveScraperFailures = 0;
+      }
+    } catch (e) {
+      if (requestedMode === 'scraper') {
+        this.recordScraperFailure();
+      }
+      if (yielded) throw e;
+
+      if (config.failover) {
+        logger.warn(`[WARN] Execution failed on ${requestedMode}. Initiating fallback to Cloud API...`);
+        const cloud = getCloudProvider(agentType);
+        const stream = await cloud.stream(prompt, options);
+        for await (const chunk of stream) {
+          yield chunk;
+        }
+      } else {
+        throw e;
+      }
+    }
   }
 }
 
-const dispatcherInstance = new ProviderDispatcher();
-export default dispatcherInstance;
+const providerManager = new ProviderManager();
+
+export const dispatchPrompt = (params) => providerManager.dispatchPrompt(params);
+export const streamWithFailover = (params) => providerManager.streamWithFailover(params);
+export default providerManager;

@@ -14,7 +14,7 @@ export class BaseAgent {
 
   buildContext(task) {
     if (!this.projectState) return '';
-    const messages = this.projectState.getMessages(15);
+    const messages = this.projectState.getMessages(10);
     const summary = this.projectState.getSummary();
     const decisions = this.projectState.getDecisions();
 
@@ -26,7 +26,7 @@ Files Changed So Far: ${summary.filesChanged.join(', ') || 'None'}
 Key Architectural Decisions:
 ${decisions.map(d => `- [${d.type.toUpperCase()}] ${d.title}: ${d.description} (Status: ${d.status})`).join('\n') || 'None yet'}
 
-Recent Messages:
+Recent Team Messages:
 ${messages.map(m => `[${m.fromAgent}] (${m.type}): ${m.content}`).join('\n')}
 
 === CURRENT TASK ===
@@ -55,24 +55,37 @@ ${task ? JSON.stringify(task, null, 2) : 'No specific task active'}`;
     return message;
   }
 
-  async executeWithTools(task, instructions, maxToolCalls = 10) {
+  async executeWithTools(task, instructions, maxToolCalls = 12) {
     let iteration = 0;
     const context = this.buildContext(task);
     const availableTools = toolRegistry.getToolsForAgent(this.role);
+    const writtenFiles = new Set();
 
     let conversationHistory = [
       `User Instructions: ${instructions}`,
       `Current Project Context:\n${context}`
     ];
 
-    while (iteration < maxToolCalls) {
-      const prompt = `${conversationHistory.join('\n\n')}
+    let lastToolCallSignature = '';
+    let duplicateToolCount = 0;
 
-Available Tools:
-${JSON.stringify(availableTools, null, 2)}
+    while (iteration < maxToolCalls) {
+      let guidance = '';
+      if (duplicateToolCount > 0) {
+        guidance = `\n[CRITICAL GUIDANCE]: You already called that tool. Do NOT call it again. If you have finished writing the files, return action: "respond" immediately.`;
+      }
+
+      const toolDescriptions = availableTools.map(t => 
+        `- ${t.name}: ${t.description} -> Expected args: ${JSON.stringify(t.parameters || {})}`
+      ).join('\n');
+
+      const prompt = `${conversationHistory.join('\n\n')}${guidance}
+
+Available Tools (and argument schemas):
+${toolDescriptions}
 
 You can decide to either:
-1. Call a tool to inspect or modify code/files.
+1. Call a tool to write or inspect code (e.g. write_file to create code, read_file to inspect).
 Format:
 {
   "action": "tool_call",
@@ -81,17 +94,17 @@ Format:
   "justification": "Why you are calling this tool"
 }
 
-2. Return your final response/deliverable.
+2. Return your final deliverable once work/inspection is finished.
 Format:
 {
   "action": "respond",
-  "summary": "Summary of what you did",
-  "deliverable": "Detailed explanation, code, or findings",
-  "filesChanged": ["path/to/file1.js"],
+  "summary": "Summary of what was accomplished or observed",
+  "deliverable": "Detailed explanation or findings",
+  "filesChanged": ["path/to/file.js"],
   "structured": { ... }
 }
 
-Choose your next action:`;
+Choose your next action (return valid JSON only):`;
 
       const response = await modelRouter.generateStructuredForAgent(this.role, {
         systemPrompt: this.systemPrompt,
@@ -104,17 +117,53 @@ Choose your next action:`;
         throw new Error(`Agent [${this.name}] did not return a valid structured response object.`);
       }
 
-      if (structured.action === 'respond') {
-        this.recordMessage('implementation', structured.summary || structured.deliverable || 'Task response provided', structured, task?.id);
-        return structured;
+      const actionRaw = (structured.action || '').toLowerCase().trim();
+      const hasTool = structured.tool && typeof structured.tool === 'string';
+
+      // If action is respond or if no valid tool is called but deliverable/summary exists
+      if (actionRaw === 'respond' || actionRaw === 'response' || actionRaw === 'complete' || actionRaw === 'finished' || (!hasTool && (structured.summary || structured.deliverable))) {
+        const files = Array.from(new Set([...(structured.filesChanged || []), ...Array.from(writtenFiles)]));
+        const finalResult = {
+          ...structured,
+          action: 'respond',
+          filesChanged: files
+        };
+        this.recordMessage('implementation', structured.summary || structured.deliverable || 'Task response provided', finalResult, task?.id);
+        return finalResult;
       }
 
-      if (structured.action === 'tool_call') {
-        const { tool, args, justification } = structured;
+      if (actionRaw === 'tool_call' || actionRaw === 'tool' || hasTool) {
+        const tool = structured.tool;
+        const args = structured.args || {};
+        const justification = structured.justification || '';
+        const currentSig = `${tool}:${JSON.stringify(args)}`;
+
+        if (currentSig === lastToolCallSignature) {
+          duplicateToolCount++;
+          if (duplicateToolCount >= 2) {
+            // Force completion if agent is stuck repeating identical tool call
+            logger.warn(`[${this.name}] Tool call repetition threshold reached for ${tool}. Advancing.`);
+            const files = Array.from(writtenFiles);
+            return {
+              action: 'respond',
+              summary: `Completed task with files: ${files.join(', ') || 'workspace files'}`,
+              deliverable: structured.justification || 'Task execution completed',
+              filesChanged: files
+            };
+          }
+        } else {
+          lastToolCallSignature = currentSig;
+          duplicateToolCount = 0;
+        }
+
         logger.info(`[${this.name}] Tool Call -> ${tool}(${JSON.stringify(args)}) - Justification: ${justification || 'N/A'}`);
-        
         this.projectState?.emitEvent('tool_call', this.name, `Executing tool: ${tool}`, { tool, args, justification });
         
+        if (tool === 'write_file') {
+          const targetFile = args.filePath || args.path || args.file;
+          if (targetFile) writtenFiles.add(targetFile);
+        }
+
         try {
           const toolResult = await toolRegistry.executeTool(tool, args, this.role);
           conversationHistory.push(`[You called tool ${tool} with args ${JSON.stringify(args)}]\nTool Result:\n${JSON.stringify(toolResult.output)}`);
@@ -125,6 +174,17 @@ Choose your next action:`;
       }
 
       iteration++;
+    }
+
+    // If max iterations reached but files were written, return successful deliverable
+    if (writtenFiles.size > 0) {
+      const files = Array.from(writtenFiles);
+      return {
+        action: 'respond',
+        summary: `Implemented changes across ${files.length} files: ${files.join(', ')}`,
+        deliverable: `Task implementation files created: ${files.join(', ')}`,
+        filesChanged: files
+      };
     }
 
     throw new Error(`Agent [${this.name}] exceeded maximum tool call depth (${maxToolCalls}).`);

@@ -28,8 +28,11 @@ export default class BaseProvider {
       maxTokens
     });
 
-    const text = response.text || '';
+    let text = response.text || '';
     
+    // Strip reasoning / thinking tokens (e.g. <think>...</think> from DeepSeek R1 models)
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
     // Extract JSON from markdown or raw text
     let jsonStr = text.trim();
     const jsonBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);

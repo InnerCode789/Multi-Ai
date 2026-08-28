@@ -11,7 +11,7 @@ export class ModelRouter {
     this.agentRouting = {
       planner: { provider: config.agents?.planner?.provider || 'gemini', model: config.agents?.planner?.model || config.gemini.model },
       engineer: { provider: config.agents?.engineer?.provider || 'groq', model: config.agents?.engineer?.model || config.groq.model },
-      reviewer: { provider: config.agents?.reviewer?.provider || 'github-models', model: config.agents?.reviewer?.model || config.githubModels.model },
+      reviewer: { provider: config.agents?.reviewer?.provider || 'gemini', model: config.agents?.reviewer?.model || config.gemini.model },
       qa: { provider: config.agents?.qa?.provider || 'gemini', model: config.agents?.qa?.model || config.gemini.model }
     };
     this.initProviders();
@@ -20,15 +20,19 @@ export class ModelRouter {
   initProviders() {
     if (config.gemini?.apiKey) {
       this.providers.set('gemini', new GeminiProvider(config.gemini.apiKey, config.gemini.model));
+      logger.info(`Provider [Gemini] registered with model [${config.gemini.model}]`);
     }
     if (config.groq?.apiKey) {
       this.providers.set('groq', new GroqProvider(config.groq.apiKey, config.groq.model));
+      logger.info(`Provider [Groq] registered with model [${config.groq.model}]`);
     }
     if (config.githubModels?.token) {
       this.providers.set('github-models', createGitHubModelsProvider(config.githubModels.token, config.githubModels.model, config.githubModels.endpoint));
+      logger.info(`Provider [GitHubModels] registered with model [${config.githubModels.model}]`);
     }
     if (config.ollama?.baseUrl) {
       this.providers.set('ollama', new OllamaProvider(config.ollama.baseUrl, config.ollama.model));
+      logger.info(`Provider [Ollama] registered with model [${config.ollama.model}] at [${config.ollama.baseUrl}]`);
     }
   }
 
@@ -63,8 +67,8 @@ export class ModelRouter {
     // Fallback: pick any available provider
     const available = Array.from(this.providers.keys());
     if (available.length === 0) {
-      // Create fallback Ollama or Mock provider
-      const fallbackOllama = new OllamaProvider(config.ollama?.baseUrl || 'http://localhost:11434', 'llama3.2:3b');
+      // Create fallback Ollama
+      const fallbackOllama = new OllamaProvider(config.ollama?.baseUrl || 'http://localhost:11434', 'deepseek-r1:7b');
       return {
         provider: fallbackOllama,
         providerName: 'ollama (fallback)',
@@ -95,7 +99,7 @@ export class ModelRouter {
 
   async generateStructuredForAgent(agentRole, { systemPrompt, userPrompt, schema, temperature, maxTokens }) {
     const { provider, providerName, isFallback } = this.getProviderForAgent(agentRole);
-    logger.info(`Agent [${agentRole}] requesting structured JSON from Model [${provider.getName()}:${provider.getModelId()}]`);
+    logger.info(`Agent [${agentRole}] requesting structured JSON from Model [${provider.getName()}:${provider.getModelId()}] ${isFallback ? '(FALLBACK)' : ''}`);
     return await provider.generateStructured({ systemPrompt, userPrompt, schema, temperature, maxTokens });
   }
 }

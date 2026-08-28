@@ -87,19 +87,19 @@ export const ToolResultSchema = z.object({
 });
 
 export const PlanSchema = z.object({
-  goalAnalysis: z.string(),
-  requirements: z.array(z.string()),
+  goalAnalysis: z.string().optional().default(''),
+  requirements: z.array(z.string()).default([]),
   acceptanceCriteria: z.array(z.object({
     id: z.string(),
     description: z.string()
-  })),
+  })).default([]),
   tasks: z.array(z.object({
     title: z.string(),
     description: z.string(),
     agentRole: z.string().default('engineer'),
     priority: z.number().int().min(1).max(10).default(5),
     dependencies: z.array(z.string()).default([])
-  })),
+  })).default([]),
   architecture: z.string().optional().default(''),
   risks: z.array(z.string()).default([])
 });

@@ -1,15 +1,42 @@
 import BaseProvider from './baseProvider.js';
+import logger from '../utils/logger.js';
 
 export class OllamaProvider extends BaseProvider {
-  constructor(baseUrl = 'http://localhost:11434', modelId = 'llama3.2:3b') {
+  constructor(baseUrl = 'http://localhost:11434', modelId = 'deepseek-r1:7b') {
     super('Ollama', modelId);
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.resolvedModel = modelId;
+  }
+
+  async getValidModel() {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/tags`);
+      if (res.ok) {
+        const data = await res.json();
+        const models = data.models || [];
+        const match = models.find(m => m.name === this.modelId || m.model === this.modelId);
+        if (match) {
+          this.resolvedModel = match.name;
+          return this.resolvedModel;
+        }
+        if (models.length > 0) {
+          logger.warn(`Model [${this.modelId}] not found in Ollama. Auto-selecting installed model [${models[0].name}].`);
+          this.resolvedModel = models[0].name;
+          return this.resolvedModel;
+        }
+      }
+    } catch {
+      // ignore check failure
+    }
+    return this.modelId;
   }
 
   async generate({ systemPrompt, userPrompt, temperature = 0.7, maxTokens = 4096 }) {
     const start = Date.now();
+    const modelToUse = await this.getValidModel();
+
     const payload = {
-      model: this.modelId,
+      model: modelToUse,
       prompt: userPrompt,
       system: systemPrompt || undefined,
       stream: false,
@@ -26,7 +53,8 @@ export class OllamaProvider extends BaseProvider {
     });
 
     if (!res.ok) {
-      throw new Error(`Ollama error: HTTP ${res.status} ${res.statusText}`);
+      const errBody = await res.text().catch(() => '');
+      throw new Error(`Ollama error: HTTP ${res.status} ${res.statusText} - ${errBody}`);
     }
 
     const data = await res.json();
@@ -35,13 +63,15 @@ export class OllamaProvider extends BaseProvider {
       tokens: data.eval_count || 0,
       latencyMs: Date.now() - start,
       provider: this.name,
-      modelId: this.modelId
+      modelId: modelToUse
     };
   }
 
   async *stream({ systemPrompt, userPrompt, temperature = 0.7, maxTokens = 4096 }) {
+    const modelToUse = await this.getValidModel();
+
     const payload = {
-      model: this.modelId,
+      model: modelToUse,
       prompt: userPrompt,
       system: systemPrompt || undefined,
       stream: true,
@@ -58,7 +88,8 @@ export class OllamaProvider extends BaseProvider {
     });
 
     if (!res.ok) {
-      throw new Error(`Ollama streaming error: HTTP ${res.status} ${res.statusText}`);
+      const errBody = await res.text().catch(() => '');
+      throw new Error(`Ollama streaming error: HTTP ${res.status} ${res.statusText} - ${errBody}`);
     }
 
     const reader = res.body.getReader();
@@ -77,13 +108,13 @@ export class OllamaProvider extends BaseProvider {
         if (!line.trim()) continue;
         try {
           const json = JSON.parse(line);
-          yield { chunk: json.response || '', done: json.done || false, provider: this.name, modelId: this.modelId };
-        } catch (e) {
+          yield { chunk: json.response || '', done: json.done || false, provider: this.name, modelId: modelToUse };
+        } catch {
           // ignore corrupted chunk
         }
       }
     }
-    yield { chunk: '', done: true, provider: this.name, modelId: this.modelId };
+    yield { chunk: '', done: true, provider: this.name, modelId: modelToUse };
   }
 
   static async healthCheck(baseUrl = 'http://localhost:11434') {

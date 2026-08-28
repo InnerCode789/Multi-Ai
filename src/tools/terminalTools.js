@@ -16,15 +16,16 @@ export function setupTerminalTools(workspaceDir) {
   };
 
   const executeSafely = async (command, cwd, timeout = 30000) => {
+    if (!command || typeof command !== 'string') {
+      throw new Error('Command string is required');
+    }
+
     if (!isCommandAllowed(command)) {
       throw new Error(`Command not allowed: ${command}`);
     }
     
-    if (command.includes('|') || command.includes('>')) {
-       // A simplistic check, real implementation needs proper shell parsing
-       if (command.includes('rm -rf /') || command.toLowerCase().includes('powershell')) {
-           throw new Error('Dangerous command sequence detected');
-       }
+    if (command.includes('rm -rf /') || command.toLowerCase().includes('powershell -command')) {
+      throw new Error('Dangerous command sequence detected');
     }
 
     const safeCwd = path.resolve(workspaceDir, cwd || '.');
@@ -49,16 +50,36 @@ export function setupTerminalTools(workspaceDir) {
     }
   };
 
-  toolRegistry.registerTool('run_command', 'Run a command', async ({ command, cwd, timeout }) => {
-    return await executeSafely(command, cwd, timeout);
-  }, ['engineer', 'qa']);
+  toolRegistry.registerTool(
+    'run_command',
+    'Execute a safe development command in the workspace terminal',
+    async (args = {}) => {
+      const cmd = args.command || args.cmd;
+      return await executeSafely(cmd, args.cwd, args.timeout);
+    },
+    ['engineer', 'qa'],
+    { command: 'string (command to run, e.g. "node --check index.js")' }
+  );
 
-  toolRegistry.registerTool('run_tests', 'Run tests', async ({ testCommand, cwd }) => {
-    return await executeSafely(testCommand || 'npm test', cwd, 60000);
-  }, ['engineer', 'qa']);
+  toolRegistry.registerTool(
+    'run_tests',
+    'Execute project test suite in the workspace',
+    async (args = {}) => {
+      const cmd = args.testCommand || args.command || args.cmd || 'npm test';
+      return await executeSafely(cmd, args.cwd, 60000);
+    },
+    ['engineer', 'qa'],
+    { testCommand: 'string (optional test command, defaults to "npm test")' }
+  );
 
-  toolRegistry.registerTool('install_packages', 'Install packages', async ({ packages, cwd }) => {
-    const pkgString = Array.isArray(packages) ? packages.join(' ') : packages;
-    return await executeSafely(`npm install ${pkgString}`, cwd, 120000);
-  }, ['engineer', 'qa']);
+  toolRegistry.registerTool(
+    'install_packages',
+    'Install npm packages in the workspace',
+    async (args = {}) => {
+      const pkgString = Array.isArray(args.packages) ? args.packages.join(' ') : (args.packages || args.package || '');
+      return await executeSafely(`npm install ${pkgString}`, args.cwd, 120000);
+    },
+    ['engineer', 'qa'],
+    { packages: 'string | string[] (package names to install)' }
+  );
 }

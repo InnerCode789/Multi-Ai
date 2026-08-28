@@ -33,7 +33,7 @@ Analyze this goal and provide:
 Return a JSON object with this exact structure:
 {
   "goalAnalysis": "Detailed architectural rationale and component breakdown",
-  "requirements": ["Requirement 1", "Requirement 2", ...],
+  "requirements": ["Requirement 1", "Requirement 2"],
   "acceptanceCriteria": [
     { "id": "crit_1", "description": "Specific verifiable requirement 1" },
     { "id": "crit_2", "description": "Specific verifiable requirement 2" }
@@ -48,7 +48,7 @@ Return a JSON object with this exact structure:
     }
   ],
   "architecture": "High level architecture overview",
-  "risks": ["Risk 1", "Risk 2"]
+  "risks": ["Risk 1"]
 }`;
 
     const response = await modelRouter.generateStructuredForAgent('planner', {
@@ -76,14 +76,49 @@ ${JSON.stringify(existingTasks, null, 2)}
 
 Analyze why these criteria failed and generate remedial tasks to fix the implementation and satisfy the missing requirements.
 
-Return a JSON object matching the standard plan structure with remediation tasks.`;
+Return a JSON object matching this structure:
+{
+  "goalAnalysis": "Root cause of failure and remediation strategy",
+  "requirements": [],
+  "acceptanceCriteria": [],
+  "tasks": [
+    {
+      "title": "Remediation Task Title",
+      "description": "Specific fix required for the engineer",
+      "agentRole": "engineer",
+      "priority": 1,
+      "dependencies": []
+    }
+  ],
+  "architecture": "Adjusted architecture if any",
+  "risks": []
+}`;
 
-    const response = await modelRouter.generateStructuredForAgent('planner', {
-      systemPrompt: this.systemPrompt,
-      userPrompt: prompt
-    });
+    let revisedPlan;
+    try {
+      const response = await modelRouter.generateStructuredForAgent('planner', {
+        systemPrompt: this.systemPrompt,
+        userPrompt: prompt
+      });
+      revisedPlan = PlanSchema.parse(response.structured);
+    } catch (err) {
+      logger.warn(`[Planner] Replanning JSON parsing fallback: ${err.message}`);
+      revisedPlan = {
+        goalAnalysis: `Remediation for ${failedCriteria.length} criteria`,
+        requirements: [],
+        acceptanceCriteria: [],
+        tasks: failedCriteria.map((c, i) => ({
+          title: `Fix and satisfy criterion: ${c.description.slice(0, 40)}`,
+          description: `Address failed criterion: ${c.description}. Error/evidence: ${c.evidence || 'Criterion not met'}`,
+          agentRole: 'engineer',
+          priority: 1,
+          dependencies: []
+        })),
+        architecture: '',
+        risks: []
+      };
+    }
 
-    const revisedPlan = PlanSchema.parse(response.structured);
     this.recordMessage('plan', `Plan Revised for Remediation: ${revisedPlan.tasks.length} new tasks.`, revisedPlan);
     this.projectState?.emitEvent('plan_revised', 'Planner', `Plan revised with ${revisedPlan.tasks.length} remedial tasks`, { plan: revisedPlan });
 

@@ -5,10 +5,11 @@ class ToolRegistry {
     this.tools = new Map();
   }
 
-  registerTool(name, description, executeFn, permissions = ['*']) {
+  registerTool(name, description, executeFn, permissions = ['*'], parameters = {}) {
     this.tools.set(name, {
       name,
       description,
+      parameters,
       execute: executeFn,
       permissions
     });
@@ -21,7 +22,8 @@ class ToolRegistry {
   listTools() {
     return Array.from(this.tools.values()).map(t => ({
       name: t.name,
-      description: t.description
+      description: t.description,
+      parameters: t.parameters
     }));
   }
 
@@ -61,7 +63,11 @@ class ToolRegistry {
   getToolsForAgent(agentRole) {
     return Array.from(this.tools.values())
       .filter(t => t.permissions.includes('*') || t.permissions.includes(agentRole))
-      .map(t => ({ name: t.name, description: t.description }));
+      .map(t => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters
+      }));
   }
 }
 

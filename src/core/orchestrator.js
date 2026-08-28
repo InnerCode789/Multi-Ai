@@ -6,6 +6,7 @@ import { agentRegistry } from '../agents/agentRegistry.js';
 import { setupFileTools } from '../tools/fileTools.js';
 import { setupTerminalTools } from '../tools/terminalTools.js';
 import { generateId, GoalSchema } from './schemas.js';
+import { modelRouter } from '../providers/modelRouter.js';
 import db from '../db/database.js';
 import logger from '../utils/logger.js';
 import config from '../config/env.js';
@@ -15,8 +16,74 @@ export class Orchestrator {
     this.activeRuns = new Map();
   }
 
+  // Canonical dependency normalization helper
+  normalizeTasks(rawTasks, goalId) {
+    // 1. Assign unique UUIDs to each task upfront
+    const tasksWithId = rawTasks.map((t, idx) => ({
+      id: generateId(),
+      goalId,
+      title: t.title || `Task ${idx + 1}`,
+      description: t.description || '',
+      status: 'pending',
+      assignedAgent: 'engineer', // Normalize to engineer (the executor agent with tool privileges)
+      priority: t.priority || (idx + 1),
+      rawDependencies: t.dependencies || [],
+      attempts: 0,
+      maxAttempts: 3
+    }));
+
+    // 2. Build lookup map from indices, titles, and keys to task UUID
+    const lookupMap = new Map();
+    tasksWithId.forEach((task, idx) => {
+      lookupMap.set(String(idx), task.id);
+      lookupMap.set(String(idx + 1), task.id);
+      lookupMap.set(`task_${idx + 1}`, task.id);
+      lookupMap.set(`task ${idx + 1}`, task.id);
+      lookupMap.set(task.title.toLowerCase().trim(), task.id);
+    });
+
+    // 3. Resolve dependencies to canonical UUIDs
+    return tasksWithId.map((task) => {
+      const canonicalDeps = new Set();
+
+      for (const dep of task.rawDependencies) {
+        const depStr = String(dep).toLowerCase().trim();
+        if (lookupMap.has(depStr)) {
+          const targetId = lookupMap.get(depStr);
+          if (targetId !== task.id) {
+            canonicalDeps.add(targetId);
+          }
+        } else {
+          // Attempt substring match on task titles
+          const match = tasksWithId.find(t => 
+            t.id !== task.id && (
+              t.title.toLowerCase().includes(depStr) || 
+              depStr.includes(t.title.toLowerCase())
+            )
+          );
+          if (match) {
+            canonicalDeps.add(match.id);
+          } else {
+            logger.info(`[Orchestrator] Dropping unresolvable dependency reference: "${dep}" for task "${task.title}"`);
+          }
+        }
+      }
+
+      const { rawDependencies, ...cleanTask } = task;
+      return {
+        ...cleanTask,
+        dependencies: Array.from(canonicalDeps)
+      };
+    });
+  }
+
   async runGoal({ goalDescription, workspaceDir = null, maxIterations = 10, onEvent = null }) {
     const goalId = generateId();
+
+    // Verify Ollama in LOCAL-ONLY mode
+    if (config.aiMode === 'local') {
+      await modelRouter.verifyLocalProvider();
+    }
     
     // Setup workspace directory
     const resolvedWorkspace = workspaceDir 
@@ -82,19 +149,9 @@ export class Orchestrator {
       }));
       db.saveGoal(currentGoal);
 
-      // Populate task queue
-      taskQueue.addTasks(plan.tasks.map((t, idx) => ({
-        id: generateId(),
-        goalId,
-        title: t.title,
-        description: t.description,
-        status: 'pending',
-        assignedAgent: t.agentRole || 'engineer',
-        priority: t.priority || (idx + 1),
-        dependencies: t.dependencies || [],
-        attempts: 0,
-        maxAttempts: 3
-      })));
+      // Populate task queue with canonical dependencies
+      const normalizedTasks = this.normalizeTasks(plan.tasks || [], goalId);
+      taskQueue.addTasks(normalizedTasks);
 
       // ==========================================
       // STAGE 2: AUTONOMOUS EXECUTION & DEBATE LOOP
@@ -169,19 +226,11 @@ export class Orchestrator {
           projectState.emitEvent('replan_triggered', 'Planner', `${failedCriteria.length} acceptance criteria failed. Generating remediation tasks.`, { failedCriteria });
 
           const revisedPlan = await planner.replan(goalDescription, failedCriteria, taskQueue.getProgress());
-          
-          taskQueue.addTasks(revisedPlan.tasks.map((t, idx) => ({
-            id: generateId(),
-            goalId,
-            title: `[Remediation] ${t.title}`,
-            description: t.description,
-            status: 'pending',
-            assignedAgent: t.agentRole || 'engineer',
-            priority: 1, // High priority for fixes
-            dependencies: [],
-            attempts: 0,
-            maxAttempts: 3
-          })));
+          const remedialTasks = this.normalizeTasks(
+            revisedPlan.tasks.map(t => ({ ...t, title: `[Remediation] ${t.title}` })),
+            goalId
+          );
+          taskQueue.addTasks(remedialTasks);
         }
       }
 

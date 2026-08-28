@@ -118,30 +118,32 @@ Choose your next action (return valid JSON only):`;
       }
 
       const actionRaw = (structured.action || '').toLowerCase().trim();
-      const hasTool = structured.tool && typeof structured.tool === 'string';
+      const directToolMatch = toolRegistry.getTool(actionRaw);
+      const isToolCallAction = actionRaw === 'tool_call' || actionRaw === 'tool';
+      const hasToolField = structured.tool && typeof structured.tool === 'string';
 
-      // If action is respond or if no valid tool is called but deliverable/summary exists
-      if (actionRaw === 'respond' || actionRaw === 'response' || actionRaw === 'complete' || actionRaw === 'finished' || (!hasTool && (structured.summary || structured.deliverable))) {
-        const files = Array.from(new Set([...(structured.filesChanged || []), ...Array.from(writtenFiles)]));
-        const finalResult = {
-          ...structured,
-          action: 'respond',
-          filesChanged: files
-        };
-        this.recordMessage('implementation', structured.summary || structured.deliverable || 'Task response provided', finalResult, task?.id);
-        return finalResult;
-      }
+      // Normalize tool call vs final response
+      if (directToolMatch || isToolCallAction || hasToolField) {
+        const tool = structured.tool || (directToolMatch ? actionRaw : null);
+        let args = structured.args || {};
+        
+        // If arguments were placed at root level of structured object
+        if (Object.keys(args).length === 0) {
+          args = {
+            filePath: structured.filePath || structured.file || structured.path,
+            content: structured.content ?? structured.code ?? structured.text,
+            command: structured.command || structured.cmd,
+            dirPath: structured.dirPath || structured.directory || structured.dir,
+            pattern: structured.pattern || structured.query
+          };
+        }
 
-      if (actionRaw === 'tool_call' || actionRaw === 'tool' || hasTool) {
-        const tool = structured.tool;
-        const args = structured.args || {};
         const justification = structured.justification || '';
         const currentSig = `${tool}:${JSON.stringify(args)}`;
 
         if (currentSig === lastToolCallSignature) {
           duplicateToolCount++;
           if (duplicateToolCount >= 2) {
-            // Force completion if agent is stuck repeating identical tool call
             logger.warn(`[${this.name}] Tool call repetition threshold reached for ${tool}. Advancing.`);
             const files = Array.from(writtenFiles);
             return {
@@ -171,12 +173,22 @@ Choose your next action (return valid JSON only):`;
           logger.warn(`[${this.name}] Tool execution failed: ${err.message}`);
           conversationHistory.push(`[Tool ${tool} execution failed]: ${err.message}`);
         }
+      } else {
+        // Treat as final respond deliverable
+        const files = Array.from(new Set([...(structured.filesChanged || []), ...Array.from(writtenFiles)]));
+        const finalResult = {
+          ...structured,
+          action: 'respond',
+          filesChanged: files
+        };
+        this.recordMessage('implementation', structured.summary || structured.deliverable || 'Task response provided', finalResult, task?.id);
+        return finalResult;
       }
 
       iteration++;
     }
 
-    // If max iterations reached but files were written, return successful deliverable
+    // If max iterations reached but files were written, return deliverable
     if (writtenFiles.size > 0) {
       const files = Array.from(writtenFiles);
       return {

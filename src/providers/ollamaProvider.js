@@ -31,7 +31,7 @@ export class OllamaProvider extends BaseProvider {
     return this.modelId;
   }
 
-  async generate({ systemPrompt, userPrompt, temperature = 0.7, maxTokens = 4096 }) {
+  async generate({ systemPrompt, userPrompt, temperature = 0.6, maxTokens = 8192 }) {
     const start = Date.now();
     const modelToUse = await this.getValidModel();
 
@@ -67,7 +67,7 @@ export class OllamaProvider extends BaseProvider {
     };
   }
 
-  async *stream({ systemPrompt, userPrompt, temperature = 0.7, maxTokens = 4096 }) {
+  async *stream({ systemPrompt, userPrompt, temperature = 0.6, maxTokens = 8192 }) {
     const modelToUse = await this.getValidModel();
 
     const payload = {

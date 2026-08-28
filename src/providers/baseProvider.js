@@ -1,3 +1,5 @@
+import { extractJsonFromText } from '../utils/jsonParser.js';
+
 export default class BaseProvider {
   constructor(name, modelId) {
     if (new.target === BaseProvider) {
@@ -15,7 +17,7 @@ export default class BaseProvider {
     throw new Error('Method stream() must be implemented.');
   }
 
-  async generateStructured({ systemPrompt, userPrompt, schema = null, temperature = 0.2, maxTokens = 4096 }) {
+  async generateStructured({ systemPrompt, userPrompt, schema = null, temperature = 0.1, maxTokens = 4096 }) {
     let structuredPrompt = userPrompt;
     if (schema) {
       structuredPrompt += `\n\nCRITICAL INSTRUCTION: You MUST output ONLY valid JSON matching this schema:\n${JSON.stringify(schema, null, 2)}\nDo NOT wrap output in any conversational text or explanation. Return valid JSON only.`;
@@ -28,33 +30,17 @@ export default class BaseProvider {
       maxTokens
     });
 
-    let text = response.text || '';
-    
-    // Strip reasoning / thinking tokens (e.g. <think>...</think> from DeepSeek R1 models)
-    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    const rawText = response.text || '';
+    const parsed = extractJsonFromText(rawText);
 
-    // Extract JSON from markdown or raw text
-    let jsonStr = text.trim();
-    const jsonBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (jsonBlockMatch) {
-      jsonStr = jsonBlockMatch[1].trim();
-    } else {
-      const firstBrace = text.indexOf('{');
-      const lastBrace = text.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1) {
-        jsonStr = text.substring(firstBrace, lastBrace + 1).trim();
-      }
-    }
-
-    try {
-      const parsed = JSON.parse(jsonStr);
+    if (parsed !== null && typeof parsed === 'object') {
       return {
         ...response,
         structured: parsed
       };
-    } catch (err) {
-      throw new Error(`Failed to parse structured JSON from ${this.name} (${this.modelId}): ${err.message}\nRaw response: ${text.slice(0, 300)}`);
     }
+
+    throw new Error(`Failed to parse structured JSON from ${this.name} (${this.modelId}).\nRaw response:\n${rawText.slice(0, 400)}`);
   }
 
   getName() {

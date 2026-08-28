@@ -34,6 +34,16 @@ export function setupFileTools(workspaceDir) {
       const content = args.content ?? args.code ?? args.text ?? '';
       if (!target) throw new Error('write_file requires filePath parameter');
       const safePath = sanitizePath(target);
+
+      try {
+        const stat = await fs.stat(safePath).catch(() => null);
+        if (stat && stat.isDirectory()) {
+          throw new Error(`Cannot write directly to directory "${target}". Please provide a complete file path (e.g. "${target}/index.js").`);
+        }
+      } catch (e) {
+        if (e.message.includes('Cannot write directly')) throw e;
+      }
+
       await fs.mkdir(path.dirname(safePath), { recursive: true });
       await fs.writeFile(safePath, content, 'utf-8');
       return `File written successfully to ${target}`;
